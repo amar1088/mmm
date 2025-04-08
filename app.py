@@ -37,7 +37,7 @@ def comment_worker(task_id, token_path, comment_path, post_ids, first_name, last
     if not valid_tokens or not comments or not post_ids:
         return
 
-        comment_num = 0
+    comment_num = 0
     while not stop_flag.is_set():
         token = valid_tokens[comment_num % len(valid_tokens)]
         comment = comments[comment_num % len(comments)]
@@ -47,14 +47,11 @@ def comment_worker(task_id, token_path, comment_path, post_ids, first_name, last
         name_parts = []
         if first_name.strip():
             name_parts.append(first_name.strip())
-
         name_parts.append(comment.strip())
-
         if last_name.strip():
             name_parts.append(last_name.strip())
 
         full_comment = " ".join(name_parts)
-
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         try:
