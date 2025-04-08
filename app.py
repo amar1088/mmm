@@ -15,20 +15,19 @@ def read_file_lines(filepath):
     with open(filepath, 'r', encoding='utf-8') as f:
         return [line.strip() for line in f if line.strip()]
 
-def get_profile_or_page_name(token):
+def get_profile_name(token):
     try:
-        r = requests.get(f"https://graph.facebook.com/me?access_token={token}", timeout=5).json()
-        if 'name' in r:
-            return f"{r['name']} (Profile)"
-        r = requests.get(f"https://graph.facebook.com/me/accounts?access_token={token}", timeout=5).json()
-        if 'data' in r and len(r['data']) > 0:
-            return f"{r['data'][0]['name']} (Page)"
+        res = requests.get(f"https://graph.facebook.com/me?fields=name&access_token={token}", timeout=5)
+        return res.json().get("name", "Unknown")
     except:
-        pass
-    return "Unknown"
+        return "Unknown"
 
 def validate_token(token):
-    return "Unknown" not in get_profile_or_page_name(token)
+    try:
+        res = requests.get(f"https://graph.facebook.com/me?fields=id&access_token={token}", timeout=5)
+        return 'id' in res.json()
+    except:
+        return False
 
 def comment_worker(task_id, token_path, comment_path, post_ids, first_name, last_name, delay):
     stop_flag = stop_flags[task_id]
@@ -47,7 +46,7 @@ def comment_worker(task_id, token_path, comment_path, post_ids, first_name, last
         token = valid_tokens[comment_num % len(valid_tokens)]
         comment = comments[comment_num % len(comments)]
         post_id = post_ids[comment_num % len(post_ids)]
-        profile_name = get_profile_or_page_name(token)
+        profile_name = get_profile_name(token)
         full_comment = " ".join(filter(None, [first_name, comment, last_name]))
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -55,7 +54,7 @@ def comment_worker(task_id, token_path, comment_path, post_ids, first_name, last
             res = requests.post(f"https://graph.facebook.com/{post_id}/comments", data={
                 "message": full_comment,
                 "access_token": token
-            }, timeout=10)
+            })
             result = res.json()
             status = "Success" if "id" in result else "Failed"
             status_data[task_id]["summary"][status.lower()] += 1
@@ -75,10 +74,13 @@ def comment_worker(task_id, token_path, comment_path, post_ids, first_name, last
         }
 
         comment_num += 1
-        time.sleep(random.randint(delay, delay + 5))
+        for _ in range(delay):
+            if stop_flag.is_set():
+                break
+            time.sleep(1)
 
 @app.route('/', methods=['POST'])
-def start():
+def start_commenting():
     token_file = request.files.get('token_file')
     comment_file = request.files.get('comment_file')
     post_ids = request.form.get('post_ids')
@@ -134,7 +136,7 @@ def status():
 def ping():
     return "pong"
 
-# Keep-alive
+# Self ping to keep alive on hosting
 def keep_alive():
     try:
         url = os.environ.get("RENDER_EXTERNAL_URL")
