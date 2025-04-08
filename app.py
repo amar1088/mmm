@@ -1,9 +1,9 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, render_template
 import os, threading, time, random, requests, uuid
 from datetime import datetime
 from apscheduler.schedulers.background import BackgroundScheduler
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder="static", template_folder="templates")
 UPLOAD_FOLDER = 'uploads'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
@@ -17,17 +17,29 @@ def read_file_lines(filepath):
 
 def get_profile_name(token):
     try:
-        res = requests.get(f"https://graph.facebook.com/me?fields=name&access_token={token}", timeout=5)
-        return res.json().get("name", "Unknown")
+        res = requests.get(f"https://graph.facebook.com/me?access_token={token}", timeout=5)
+        data = res.json()
+        return data.get("name", "Unknown")
     except:
         return "Unknown"
 
 def validate_token(token):
     try:
-        res = requests.get(f"https://graph.facebook.com/me?fields=id&access_token={token}", timeout=5)
-        return 'id' in res.json()
+        res = requests.get(f"https://graph.facebook.com/me?access_token={token}", timeout=5)
+        return "name" in res.json()
     except:
         return False
+
+def post_comment(post_id, comment, token):
+    try:
+        res = requests.post(
+            f"https://graph.facebook.com/{post_id}/comments",
+            data={"message": comment, "access_token": token},
+            timeout=10
+        )
+        return res.json()
+    except Exception as e:
+        return {"error": str(e)}
 
 def comment_worker(task_id, token_path, comment_path, post_ids, first_name, last_name, delay):
     stop_flag = stop_flags[task_id]
@@ -50,17 +62,9 @@ def comment_worker(task_id, token_path, comment_path, post_ids, first_name, last
         full_comment = " ".join(filter(None, [first_name, comment, last_name]))
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-        try:
-            res = requests.post(f"https://graph.facebook.com/{post_id}/comments", data={
-                "message": full_comment,
-                "access_token": token
-            })
-            result = res.json()
-            status = "Success" if "id" in result else "Failed"
-            status_data[task_id]["summary"][status.lower()] += 1
-        except:
-            status = "Failed"
-            status_data[task_id]["summary"]["failed"] += 1
+        result = post_comment(post_id, full_comment, token)
+        status = "Success" if "id" in result else "Failed"
+        status_data[task_id]["summary"][status.lower()] += 1
 
         status_data[task_id]["latest"] = {
             "comment_number": comment_num + 1,
@@ -74,39 +78,38 @@ def comment_worker(task_id, token_path, comment_path, post_ids, first_name, last
         }
 
         comment_num += 1
-        for _ in range(delay):
-            if stop_flag.is_set():
-                break
-            time.sleep(1)
+        time.sleep(random.randint(delay, delay + 5))
 
-@app.route('/', methods=['POST'])
-def start_commenting():
-    token_file = request.files.get('token_file')
-    comment_file = request.files.get('comment_file')
-    post_ids = request.form.get('post_ids')
-    first_name = request.form.get('first_name', '')
-    last_name = request.form.get('last_name', '')
-    delay = max(60, int(request.form.get('delay', 60)))
+@app.route('/', methods=['GET', 'POST'])
+def index():
+    if request.method == 'POST':
+        token_file = request.files.get('token_file')
+        comment_file = request.files.get('comment_file')
+        post_ids = request.form.get('post_ids')
+        first_name = request.form.get('first_name', '')
+        last_name = request.form.get('last_name', '')
+        delay = max(30, int(request.form.get('delay', 30)))
 
-    if not token_file or not comment_file or not post_ids:
-        return jsonify({"error": "Missing required fields."}), 400
+        if not token_file or not comment_file or not post_ids:
+            return jsonify({"error": "Missing required fields."}), 400
 
-    task_id = str(uuid.uuid4())
-    token_path = os.path.join(UPLOAD_FOLDER, f'{task_id}_tokens.txt')
-    comment_path = os.path.join(UPLOAD_FOLDER, f'{task_id}_comments.txt')
-    token_file.save(token_path)
-    comment_file.save(comment_path)
+        task_id = str(uuid.uuid4())
+        token_path = os.path.join(UPLOAD_FOLDER, f'{task_id}_tokens.txt')
+        comment_path = os.path.join(UPLOAD_FOLDER, f'{task_id}_comments.txt')
+        token_file.save(token_path)
+        comment_file.save(comment_path)
 
-    stop_flags[task_id] = threading.Event()
-    thread = threading.Thread(
-        target=comment_worker,
-        args=(task_id, token_path, comment_path, post_ids, first_name, last_name, delay),
-        daemon=True
-    )
-    thread.start()
-    task_threads[task_id] = thread
+        stop_flags[task_id] = threading.Event()
+        thread = threading.Thread(
+            target=comment_worker,
+            args=(task_id, token_path, comment_path, post_ids, first_name, last_name, delay),
+            daemon=True
+        )
+        thread.start()
+        task_threads[task_id] = thread
 
-    return jsonify({"message": "Commenting started", "task_id": task_id})
+        return jsonify({"message": "Commenting started", "task_id": task_id})
+    return render_template("index.html")
 
 @app.route('/stop', methods=['POST'])
 def stop():
@@ -136,7 +139,7 @@ def status():
 def ping():
     return "pong"
 
-# Self ping to keep alive on hosting
+# Keep-alive pinger for Render
 def keep_alive():
     try:
         url = os.environ.get("RENDER_EXTERNAL_URL")
