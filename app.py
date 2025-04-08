@@ -1,45 +1,70 @@
-from flask import Flask, request, jsonify, render_template, send_from_directory
-import os, threading, time, random, requests, uuid
-from datetime import datetime
+from flask import Flask, request, jsonify, render_template, send_file
+import os, threading, time, random, requests, uuid, json
+from datetime import datetime, timedelta
 from apscheduler.schedulers.background import BackgroundScheduler
 
-app = Flask(__name__, static_folder="static", template_folder="templates")
+app = Flask(__name__)
 UPLOAD_FOLDER = 'uploads'
+LOG_FOLDER = 'logs'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+os.makedirs(LOG_FOLDER, exist_ok=True)
 
 status_data = {}
 task_threads = {}
 stop_flags = {}
+token_last_used = {}
+
+APP_ID = os.getenv("FB_APP_ID")
+APP_SECRET = os.getenv("FB_APP_SECRET")
 
 def read_file_lines(filepath):
     with open(filepath, 'r', encoding='utf-8') as f:
         return [line.strip() for line in f if line.strip()]
 
+def log_error(task_id, message):
+    print(f"[{task_id}] ERROR: {message}")
+
 def get_profile_name(token):
     try:
         res = requests.get(f"https://graph.facebook.com/me?access_token={token}", timeout=5)
         return res.json().get("name", "Unknown")
-    except:
+    except Exception as e:
         return "Unknown"
 
 def validate_token(token):
-    return get_profile_name(token) != "Unknown"
+    try:
+        app_token = f"{APP_ID}|{APP_SECRET}"
+        res = requests.get(f"https://graph.facebook.com/debug_token",
+                           params={"input_token": token, "access_token": app_token})
+        data = res.json()
+        return data.get("data", {}).get("is_valid", False)
+    except Exception as e:
+        return False
 
 def comment_worker(task_id, token_path, comment_path, post_ids, first_name, last_name, delay):
     stop_flag = stop_flags[task_id]
-    status_data[task_id] = {"summary": {"success": 0, "failed": 0}, "latest": {}}
-
+    status_data[task_id] = {"summary": {"success": 0, "failed": 0}, "latest": {}, "log": []}
     tokens = read_file_lines(token_path)
     comments = read_file_lines(comment_path)
     post_ids = [x.strip() for x in post_ids.split(",") if x.strip()]
     valid_tokens = [t for t in tokens if validate_token(t)]
 
     if not valid_tokens or not comments or not post_ids:
+        log_error(task_id, "No valid tokens, comments, or post IDs.")
         return
 
     comment_num = 0
     while not stop_flag.is_set():
         token = valid_tokens[comment_num % len(valid_tokens)]
+        now = time.time()
+        last_used = token_last_used.get(token, 0)
+
+        # Cooldown check: 60 seconds per token
+        if now - last_used < 60:
+            time.sleep(5)
+            continue
+        token_last_used[token] = now
+
         comment = comments[comment_num % len(comments)]
         post_id = post_ids[comment_num % len(post_ids)]
         profile_name = get_profile_name(token)
@@ -50,9 +75,10 @@ def comment_worker(task_id, token_path, comment_path, post_ids, first_name, last
         name_parts.append(comment.strip())
         if last_name.strip():
             name_parts.append(last_name.strip())
-
         full_comment = " ".join(name_parts)
+
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        status = "Failed"
 
         try:
             res = requests.post(f"https://graph.facebook.com/{post_id}/comments", data={
@@ -61,12 +87,13 @@ def comment_worker(task_id, token_path, comment_path, post_ids, first_name, last
             })
             result = res.json()
             status = "Success" if "id" in result else "Failed"
-            status_data[task_id]["summary"][status.lower()] += 1
-        except:
-            status = "Failed"
-            status_data[task_id]["summary"]["failed"] += 1
+        except Exception as e:
+            log_error(task_id, str(e))
 
-        status_data[task_id]["latest"] = {
+        summary = status_data[task_id]["summary"]
+        summary["success" if status == "Success" else "failed"] += 1
+
+        latest = {
             "comment_number": comment_num + 1,
             "comment": comment,
             "full_comment": full_comment,
@@ -76,10 +103,22 @@ def comment_worker(task_id, token_path, comment_path, post_ids, first_name, last
             "timestamp": timestamp,
             "status": status
         }
+        status_data[task_id]["latest"] = latest
+        status_data[task_id]["log"].append(latest)
 
         comment_num += 1
-        time.sleep(random.randint(delay, delay + 5))
+        time.sleep(delay)
 
+
+    # Save log to disk after task is stopped
+    with open(os.path.join(LOG_FOLDER, f"{task_id}.json"), "w") as f:
+        json.dump(status_data[task_id], f, indent=2)
+
+    # Cleanup memory after 5 minutes
+    def cleanup():
+        time.sleep(300)
+        status_data.pop(task_id, None)
+    threading.Thread(target=cleanup, daemon=True).start()
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
@@ -136,11 +175,18 @@ def status():
         "latest": {}
     }))
 
+@app.route('/export-log/<task_id>')
+def export_log(task_id):
+    filepath = os.path.join(LOG_FOLDER, f"{task_id}.json")
+    if os.path.exists(filepath):
+        return send_file(filepath, as_attachment=True)
+    return jsonify({"error": "Log not found"}), 404
+
 @app.route('/ping')
 def ping():
     return "pong"
 
-# Keep-alive pinger every 14 minutes
+# Keep-alive pinger
 def keep_alive():
     try:
         url = os.environ.get("RENDER_EXTERNAL_URL")
