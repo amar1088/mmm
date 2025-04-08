@@ -37,13 +37,24 @@ def comment_worker(task_id, token_path, comment_path, post_ids, first_name, last
     if not valid_tokens or not comments or not post_ids:
         return
 
-    comment_num = 0
+        comment_num = 0
     while not stop_flag.is_set():
         token = valid_tokens[comment_num % len(valid_tokens)]
         comment = comments[comment_num % len(comments)]
         post_id = post_ids[comment_num % len(post_ids)]
         profile_name = get_profile_name(token)
-        full_comment = " ".join(filter(None, [first_name, comment, last_name]))
+
+        name_parts = []
+        if first_name.strip():
+            name_parts.append(first_name.strip())
+
+        name_parts.append(comment.strip())
+
+        if last_name.strip():
+            name_parts.append(last_name.strip())
+
+        full_comment = " ".join(name_parts)
+
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         try:
@@ -71,6 +82,7 @@ def comment_worker(task_id, token_path, comment_path, post_ids, first_name, last
 
         comment_num += 1
         time.sleep(random.randint(delay, delay + 5))
+
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
