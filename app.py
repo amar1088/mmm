@@ -3,7 +3,7 @@ import os, threading, time, random, requests, uuid
 from datetime import datetime
 from apscheduler.schedulers.background import BackgroundScheduler
 
-app = Flask(__name__, static_folder="static", template_folder="templates")
+app = Flask(__name__)
 UPLOAD_FOLDER = 'uploads'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
@@ -18,28 +18,16 @@ def read_file_lines(filepath):
 def get_profile_name(token):
     try:
         res = requests.get(f"https://graph.facebook.com/me?access_token={token}", timeout=5)
-        data = res.json()
-        return data.get("name", "Unknown")
+        return res.json().get("name", "Unknown")
     except:
         return "Unknown"
 
 def validate_token(token):
     try:
         res = requests.get(f"https://graph.facebook.com/me?access_token={token}", timeout=5)
-        return "name" in res.json()
+        return "error" not in res.text.lower()
     except:
         return False
-
-def post_comment(post_id, comment, token):
-    try:
-        res = requests.post(
-            f"https://graph.facebook.com/{post_id}/comments",
-            data={"message": comment, "access_token": token},
-            timeout=10
-        )
-        return res.json()
-    except Exception as e:
-        return {"error": str(e)}
 
 def comment_worker(task_id, token_path, comment_path, post_ids, first_name, last_name, delay):
     stop_flag = stop_flags[task_id]
@@ -58,13 +46,22 @@ def comment_worker(task_id, token_path, comment_path, post_ids, first_name, last
         token = valid_tokens[comment_num % len(valid_tokens)]
         comment = comments[comment_num % len(comments)]
         post_id = post_ids[comment_num % len(post_ids)]
-        profile_name = get_profile_name(token)
         full_comment = " ".join(filter(None, [first_name, comment, last_name]))
+        profile_name = get_profile_name(token)
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-        result = post_comment(post_id, full_comment, token)
-        status = "Success" if "id" in result else "Failed"
-        status_data[task_id]["summary"][status.lower()] += 1
+        try:
+            res = requests.post(
+                f"https://graph.facebook.com/{post_id}/comments",
+                data={"message": full_comment, "access_token": token},
+                timeout=10
+            )
+            result = res.json()
+            status = "Success" if "id" in result else "Failed"
+            status_data[task_id]["summary"][status.lower()] += 1
+        except:
+            status = "Failed"
+            status_data[task_id]["summary"]["failed"] += 1
 
         status_data[task_id]["latest"] = {
             "comment_number": comment_num + 1,
@@ -78,7 +75,10 @@ def comment_worker(task_id, token_path, comment_path, post_ids, first_name, last
         }
 
         comment_num += 1
-        time.sleep(random.randint(delay, delay + 5))
+        for _ in range(delay):
+            if stop_flag.is_set():
+                break
+            time.sleep(1)
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
@@ -88,7 +88,7 @@ def index():
         post_ids = request.form.get('post_ids')
         first_name = request.form.get('first_name', '')
         last_name = request.form.get('last_name', '')
-        delay = max(30, int(request.form.get('delay', 30)))
+        delay = max(60, int(request.form.get('delay', 60)))
 
         if not token_file or not comment_file or not post_ids:
             return jsonify({"error": "Missing required fields."}), 400
@@ -139,7 +139,6 @@ def status():
 def ping():
     return "pong"
 
-# Keep-alive pinger for Render
 def keep_alive():
     try:
         url = os.environ.get("RENDER_EXTERNAL_URL")
