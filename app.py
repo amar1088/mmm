@@ -1,5 +1,5 @@
 from flask import Flask, request, jsonify, render_template
-import os, threading, time, random, requests, uuid
+import os, threading, time, requests, uuid
 from datetime import datetime
 from apscheduler.schedulers.background import BackgroundScheduler
 
@@ -18,7 +18,11 @@ def read_file_lines(filepath):
 def get_profile_name(token):
     try:
         res = requests.get(f"https://graph.facebook.com/me?access_token={token}", timeout=5)
-        return res.json().get("name", "Unknown")
+        data = res.json()
+        name = data.get("name", "Unknown")
+        if 'category' in data:
+            return f"[Page] {name}"
+        return f"[Profile] {name}"
     except:
         return "Unknown"
 
