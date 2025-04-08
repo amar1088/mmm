@@ -1,69 +1,75 @@
+// Updated script.js matching the backend expectations
+
 let currentTaskId = null;
 
-document.addEventListener('DOMContentLoaded', () => {
-  setInterval(pollStatus, 5000);
-});
-
 function startCommenting() {
+  console.log("🚀 Start button clicked");
   const form = document.getElementById('commentForm');
   const formData = new FormData(form);
+
+  for (let [key, value] of formData.entries()) {
+    console.log(`🟡 ${key}:`, value);
+  }
 
   fetch('/', {
     method: 'POST',
     body: formData
   })
-  .then(res => res.json())
-  .then(data => {
-    currentTaskId = data.task_id;
-    document.getElementById('status').innerHTML = `<p><b>Status:</b> ${data.message}</p><p><b>Task ID:</b> ${currentTaskId}</p>`;
-    document.getElementById('stop_task_id').value = currentTaskId;
-  })
-  .catch(err => {
-    document.getElementById('status').innerHTML = `<p><b>Error:</b> ${err}</p>`;
-  });
+    .then(res => res.json())
+    .then(data => {
+      console.log("🟢 Response from server:", data);
+      if (data.task_id) {
+        currentTaskId = data.task_id;
+        document.getElementById('stop_task_id').value = currentTaskId;
+        document.getElementById('status').innerHTML = `
+          <p><b>Status:</b> ${data.message}</p>
+          <p><b>Task ID:</b> ${currentTaskId}</p>
+        `;
+        pollStatus();
+      } else {
+        document.getElementById('status').innerHTML = `<p><b>Error:</b> ${data.error || 'Unknown error'}</p>`;
+      }
+    })
+    .catch(error => {
+      console.error("❌ Fetch failed:", error);
+      document.getElementById('status').innerHTML = `<p><b>Error:</b> ${error.message}</p>`;
+    });
 }
 
 function stopCommenting() {
   const taskId = document.getElementById('stop_task_id').value.trim();
-
-  if (!taskId) {
-    alert("Please enter a valid Task ID to stop.");
-    return;
-  }
+  if (!taskId) return alert("Please enter a valid Task ID to stop.");
 
   fetch('/stop', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ task_id: taskId })
   })
-  .then(res => res.json())
-  .then(data => {
-    document.getElementById('status').innerHTML = `<b>${data.message}</b>`;
-    document.getElementById('logContent').innerHTML = `<p>Logs cleared after stop.</p>`;
-  });
+    .then(res => res.json())
+    .then(data => {
+      document.getElementById('status').innerHTML = `<p><b>${data.message}</b></p>`;
+    })
+    .catch(error => {
+      console.error("❌ Stop fetch failed:", error);
+    });
 }
 
 function pollStatus() {
   if (!currentTaskId) return;
-
   fetch(`/status?task_id=${currentTaskId}`)
     .then(res => res.json())
     .then(data => {
-      const s = data.summary || {};
       const l = data.latest || {};
-      document.getElementById('status').innerHTML = `
+      const s = data.summary || {};
+      document.getElementById('status').innerHTML += `
         <p><strong>Success:</strong> ${s.success || 0} | <strong>Failed:</strong> ${s.failed || 0}</p>
-        <p><strong>Last Comment #${l.comment_number || '-'}</strong></p>
         <p><strong>Post ID:</strong> ${l.post_id || '-'}</p>
-        <p><strong>Token:</strong> ${l.token || '-'}</p>
-        <p><strong>Name:</strong> ${l.profile_name || '-'}</p>
-        <p><strong>Comment:</strong> ${l.comment || '-'}</p>
+        <p><strong>Comment:</strong> ${l.full_comment || '-'}</p>
         <p><strong>Time:</strong> ${l.timestamp || '-'}</p>
+        <hr>
       `;
-
-      const logEntry = `
-        <p>#${l.comment_number || '-'} | ${l.comment || '-'} | ${l.token || '-'} | ${l.post_id || '-'} | ${l.timestamp || '-'}</p>
-      `;
-      document.getElementById('logContent').innerHTML = logEntry + document.getElementById('logContent').innerHTML;
-    });
+      setTimeout(pollStatus, 5000);
+    })
+    .catch(err => console.error("Polling error:", err));
 }
+
