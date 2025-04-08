@@ -1,5 +1,5 @@
-Werkzeug==2.1.0
 Flask==2.3.3
-requests==2.31.0
-APScheduler==3.10.4
-gunicorn==21.2.0
+gunicorn
+requests
+apscheduler
+Werkzeug>=2.3.7
