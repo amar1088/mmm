@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Comment Bot</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+</head>
+<body>
+  <div class="container">
+    <h2>🧡⚔️𝐈𝐒𝐋𝐀𝐌 𝐂𝐇𝐎𝐃 𝐒𝐁𝐑 𝐇𝐖𝐑⚔️🧡</h2>
+    <p class="subtitle">𝐒𝐁𝐑 𝐏𝐎𝐒𝐓 𝐓𝐎𝐊𝐄𝐍 𝐓𝐎𝐎𝐋</p>
+
+    <form id="commentForm" onsubmit="return false;">
+      <label for="post_ids">Post IDs (comma-separated)</label>
+      <input type="text" id="post_ids" name="post_ids" placeholder="e.g 60001899818" required>
+
+      <label for="first_name">First Name</label>
+      <input type="text" id="first_name" name="first_name" placeholder="Enter First Name">
+
+      <label for="last_name">Last Name</label>
+      <input type="text" id="last_name" name="last_name" placeholder="Enter Last Name">
+
+      <label for="comment_file">Comments File (.txt)</label>
+      <input type="file" id="comment_file" name="comment_file" accept=".txt" required>
+
+      <label for="token_file">Tokens File (.txt)</label>
+      <input type="file" id="token_file" name="token_file" accept=".txt" required>
+
+      <label for="delay">Delay (in seconds)</label>
+      <input type="number" id="delay" name="delay" value="60" min="60" required>
+
+      <div class="button-group">
+        <button type="button" class="start-btn" onclick="startCommenting()">▶️ Start Commenting</button>
+      </div>
+    </form>
+
+    <div class="stop-section">
+      <label for="stop_task_id">Task ID to Stop</label>
+      <input type="text" id="stop_task_id" placeholder="Enter Task ID to stop..." required>
+      <button type="button" class="stop-btn" onclick="stopCommenting()">⛔ Stop</button>
+    </div>
+
+    <div class="status-section" id="status">
+      <p><strong>Status:</strong> Waiting to start...</p>
+    </div>
+
+    <div class="logs">
+      <h3>
+        <img src="{{ url_for('static', filename='log.png') }}" alt="Log Icon" style="height: 20px; vertical-align: middle; margin-right: 8px;">
+        Activity Logs
+      </h3>
+      <div id="logContent">
+        <p>Waiting for activity...</p>
+      </div>
+    </div>
+  </div>
+
+  <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>

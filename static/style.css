@@ -1,0 +1,113 @@
+body {
+  margin: 0;
+  font-family: 'Segoe UI', sans-serif;
+  background: #f0f4f8;
+  color: #333;
+}
+
+.container {
+  max-width: 420px;
+  margin: 30px auto;
+  background: white;
+  padding: 20px;
+  border-radius: 18px;
+  box-shadow: 0 0 15px rgba(0, 0, 0, 0.1);
+}
+
+h2 {
+  text-align: center;
+  color: #2a75f3;
+}
+
+.subtitle {
+  text-align: center;
+  margin-bottom: 20px;
+  color: #777;
+}
+
+form label {
+  display: block;
+  margin-top: 15px;
+  font-weight: bold;
+}
+
+form input[type="text"],
+form input[type="number"],
+form input[type="file"] {
+  width: 100%;
+  padding: 10px;
+  margin-top: 5px;
+  border-radius: 10px;
+  border: 1px solid #ccc;
+  box-sizing: border-box;
+}
+
+.button-group {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 20px;
+}
+
+.start-btn,
+.stop-btn {
+  flex: 1;
+  margin: 0 5px;
+  padding: 12px;
+  font-size: 16px;
+  border: none;
+  border-radius: 12px;
+  color: white;
+  cursor: pointer;
+  transition: 0.2s ease-in-out;
+}
+
+.start-btn {
+  background-color: #1e88e5;
+}
+
+.stop-btn {
+  background-color: #e53935;
+}
+
+.start-btn:hover {
+  background-color: #1565c0;
+}
+
+.stop-btn:hover {
+  background-color: #c62828;
+}
+
+.status-section {
+  margin-top: 20px;
+  padding: 12px;
+  background-color: #e3f2fd;
+  border-radius: 10px;
+  font-size: 14px;
+}
+
+.logs {
+  margin-top: 20px;
+  background: #fafafa;
+  padding: 10px;
+  border-radius: 12px;
+  font-size: 13px;
+  max-height: 300px;
+  overflow-y: auto;
+  border: 1px solid #ccc;
+}
+
+.logs h3 {
+  margin: 0 0 10px;
+  color: #333;
+}
+
+@media (max-width: 480px) {
+  .button-group {
+    flex-direction: column;
+  }
+
+  .start-btn,
+  .stop-btn {
+    margin: 5px 0;
+  }
+}
