@@ -56,9 +56,10 @@ def comment_task(task_id, post_ids, first, last, comments, tokens, delay):
                 break
             time.sleep(1)
 
+# FIXED: Show HTML form on GET
 @app.route("/", methods=["GET"])
 def index():
-    return "Use the form to submit a POST request."
+    return render_template("index.html")
 
 @app.route("/", methods=["POST"])
 def start_commenting():
