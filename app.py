@@ -56,7 +56,6 @@ def comment_task(task_id, post_ids, first, last, comments, tokens, delay):
                 break
             time.sleep(1)
 
-# FIXED: Show HTML form on GET
 @app.route("/", methods=["GET"])
 def index():
     return render_template("index.html")
@@ -126,8 +125,9 @@ def keep_alive():
     except:
         pass
 
+# Self ping every 10 minutes
 scheduler = BackgroundScheduler()
-scheduler.add_job(keep_alive, "interval", minutes=14)
+scheduler.add_job(keep_alive, "interval", minutes=10)
 scheduler.start()
 
 if __name__ == '__main__':
