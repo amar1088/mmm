@@ -10,76 +10,60 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 status_data = {}
 task_threads = {}
 stop_flags = {}
-summaries = {}
-running_tasks = {}
+
+running_tasks = {}      # FIXED
+summaries = {}          # FIXED
 
 def read_file_lines(filepath):
     with open(filepath, 'r', encoding='utf-8') as f:
         return [line.strip() for line in f if line.strip()]
 
-def get_profile_name(token):
-    try:
-        res = requests.get(f"https://graph.facebook.com/me?access_token={token}", timeout=5)
-        data = res.json()
-        name = data.get("name", "Unknown")
-        if 'category' in data:
-            return f"[Page] {name}"
-        return f"[Profile] {name}"
-    except:
-        return "Unknown"
-
-def validate_token(token):
-    try:
-        res = requests.get(f"https://graph.facebook.com/me?access_token={token}", timeout=5)
-        return "error" not in res.text.lower()
-    except:
-        return False
-
 def clean_comment(text):
     return text.strip().replace('<b>', '').replace('</b>', '').replace('>/<B>', '')
 
-def comment_task(task_id, post_ids_str, first, last, comment_path, token_path, delay):
-    try:
-        post_ids = [pid.strip() for pid in post_ids_str.split(",") if pid.strip()]
-        comments = read_file_lines(comment_path)
-        tokens = read_file_lines(token_path)
-        summaries[task_id] = {'success': 0, 'failed': 0}
-        running_tasks[task_id] = True
+# MAIN COMMENTING LOGIC
+def comment_task(task_id, post_ids, first, last, comments, tokens, delay):
+    i = 0
+    while running_tasks.get(task_id):
+        try:
+            comment = comments[i % len(comments)].strip()
+            token = tokens[i % len(tokens)].strip()
+            post_id = post_ids[i % len(post_ids)].strip()
 
-        i = 0
-        while running_tasks.get(task_id) and not stop_flags[task_id].is_set():
-            try:
-                comment = comments[i % len(comments)]
-                token = tokens[i % len(tokens)]
-                post_id = post_ids[i % len(post_ids)]
+            name_parts = []
+            if first.strip():
+                name_parts.append(first.strip())
+            name_parts.append(comment)
+            if last.strip():
+                name_parts.append(last.strip())
 
-                name_parts = []
-                if first.strip():
-                    name_parts.append(first.strip())
-                name_parts.append(comment)
-                if last.strip():
-                    name_parts.append(last.strip())
+            full_comment = clean_comment(" ".join(name_parts))
+            url = f"https://graph.facebook.com/{post_id}/comments"
+            params = {"access_token": token, "message": full_comment}
 
-                full_comment = clean_comment(" ".join(name_parts))
-
-                url = f"https://graph.facebook.com/{post_id}/comments"
-                params = {"access_token": token, "message": full_comment}
-
-                res = requests.post(url, data=params, timeout=10)
-                if res.status_code == 200:
-                    summaries[task_id]['success'] += 1
-                else:
-                    summaries[task_id]['failed'] += 1
-            except:
+            res = requests.post(url, data=params, timeout=10)
+            if res.status_code == 200:
+                summaries[task_id]['success'] += 1
+            else:
                 summaries[task_id]['failed'] += 1
 
-            i += 1
-            for _ in range(delay):
-                if stop_flags[task_id].is_set():
-                    break
-                time.sleep(1)
-    except Exception as e:
-        print(f"[ERROR] Task crashed: {e}")
+        except Exception as e:
+            summaries[task_id]['failed'] += 1
+
+        i += 1
+        time.sleep(delay)
+
+# WRAPPER FOR THREADING
+def comment_thread(task_id, token_path, comment_path, post_ids_raw, first, last, delay):
+    comments = read_file_lines(comment_path)
+    tokens = read_file_lines(token_path)
+    post_ids = [p.strip() for p in post_ids_raw.split(',') if p.strip()]
+
+    running_tasks[task_id] = True
+    summaries[task_id] = {'success': 0, 'failed': 0}
+
+    try:
+        comment_task(task_id, post_ids, first, last, comments, tokens, delay)
     finally:
         running_tasks[task_id] = False
 
@@ -93,7 +77,7 @@ def index():
         last_name = request.form.get('last_name', '')
 
         try:
-            delay = max(60, int(request.form.get('delay', 60)))
+            delay = max(10, int(request.form.get('delay', 60)))  # Safe delay parsing
         except:
             delay = 60
 
@@ -108,8 +92,8 @@ def index():
 
         stop_flags[task_id] = threading.Event()
         thread = threading.Thread(
-            target=comment_task,
-            args=(task_id, post_ids, first_name, last_name, comment_path, token_path, delay),
+            target=comment_thread,
+            args=(task_id, token_path, comment_path, post_ids, first_name, last_name, delay),
             daemon=True
         )
         thread.start()
@@ -138,10 +122,10 @@ def status():
     task_id = request.args.get("task_id")
     if not task_id:
         return jsonify({"error": "Task ID is required"}), 400
-    return jsonify(summaries.get(task_id, {
-        "success": 0,
-        "failed": 0
-    }))
+    return jsonify({
+        "running": running_tasks.get(task_id, False),
+        "summary": summaries.get(task_id, {"success": 0, "failed": 0})
+    })
 
 @app.route('/ping')
 def ping():
