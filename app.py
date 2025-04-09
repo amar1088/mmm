@@ -10,9 +10,8 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 status_data = {}
 task_threads = {}
 stop_flags = {}
-
-running_tasks = {}      # FIXED
-summaries = {}          # FIXED
+running_tasks = {}
+summaries = {}
 
 def read_file_lines(filepath):
     with open(filepath, 'r', encoding='utf-8') as f:
@@ -24,31 +23,57 @@ def clean_comment(text):
 # MAIN COMMENTING LOGIC
 def comment_task(task_id, post_ids, first, last, comments, tokens, delay):
     i = 0
-    while running_tasks.get(task_id):
-        try:
-            comment = comments[i % len(comments)].strip()
-            token = tokens[i % len(tokens)].strip()
-            post_id = post_ids[i % len(post_ids)].strip()
+    total_posts = len(post_ids)
+    total_comments = len(comments)
+    total_tokens = len(tokens)
 
+    while running_tasks.get(task_id):
+        if stop_flags[task_id].is_set():
+            print(f"[{task_id}] Stop flag received. Stopping task.")
+            break
+
+        try:
+            post_id = post_ids[i % total_posts].strip()
+            comment = comments[i % total_comments].strip()
+            token = tokens[i % total_tokens].strip()
+
+            # Construct comment
             name_parts = []
             if first.strip():
                 name_parts.append(first.strip())
             name_parts.append(comment)
             if last.strip():
                 name_parts.append(last.strip())
-
             full_comment = clean_comment(" ".join(name_parts))
+
             url = f"https://graph.facebook.com/{post_id}/comments"
             params = {"access_token": token, "message": full_comment}
 
             res = requests.post(url, data=params, timeout=10)
+
+            # Logging this attempt
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            log_entry = {
+                "post_id": post_id,
+                "comment": full_comment,
+                "time": timestamp
+            }
+            status_data.setdefault(task_id, {"logs": []})["logs"].append(log_entry)
+            status_data[task_id]["full_comment"] = full_comment
+            status_data[task_id]["post_id"] = post_id
+            status_data[task_id]["timestamp"] = timestamp
+
             if res.status_code == 200:
                 summaries[task_id]['success'] += 1
+                print(f"[{task_id}] ✅ Comment success: {full_comment}")
             else:
                 summaries[task_id]['failed'] += 1
+                print(f"[{task_id}] ❌ Comment failed [{res.status_code}]: {res.text}")
+                # But don't remove the token
 
         except Exception as e:
             summaries[task_id]['failed'] += 1
+            print(f"[{task_id}] ⚠️ Exception: {str(e)}")
 
         i += 1
         time.sleep(delay)
@@ -66,6 +91,7 @@ def comment_thread(task_id, token_path, comment_path, post_ids_raw, first, last,
         comment_task(task_id, post_ids, first, last, comments, tokens, delay)
     finally:
         running_tasks[task_id] = False
+        print(f"[{task_id}] Task completed.")
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
@@ -77,7 +103,7 @@ def index():
         last_name = request.form.get('last_name', '')
 
         try:
-            delay = max(10, int(request.form.get('delay', 60)))  # Safe delay parsing
+            delay = max(10, int(request.form.get('delay', 60)))
         except:
             delay = 60
 
@@ -121,16 +147,16 @@ def stop():
 def status():
     task_id = request.args.get("task_id")
     if not task_id:
-        return "invalid"
+        return jsonify({"error": "Missing task_id"}), 400
 
     summary = summaries.get(task_id, {"success": 0, "failed": 0})
-
-    if summary['success'] > 0:
-        return "success"
-    elif summary['failed'] > 0:
-        return "fail"
-    else:
-        return "pending"
+    logs = status_data.get(task_id, {}).get("logs", [])
+    return jsonify({
+        "success": summary["success"],
+        "failed": summary["failed"],
+        "running": running_tasks.get(task_id, False),
+        "logs": logs
+    })
 
 @app.route('/ping')
 def ping():
