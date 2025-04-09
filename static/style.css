@@ -40,6 +40,18 @@ form input[type="file"] {
   border-radius: 10px;
   border: 1px solid #ccc;
   box-sizing: border-box;
+  transition: border-color 0.2s ease-in-out;
+}
+
+form input[type="file"]:hover {
+  background-color: #f1f1f1;
+  cursor: pointer;
+}
+
+form input:focus {
+  outline: none;
+  border: 1px solid #42a5f5;
+  box-shadow: 0 0 3px #90caf9;
 }
 
 .button-group {
@@ -58,7 +70,7 @@ form input[type="file"] {
   border-radius: 12px;
   color: white;
   cursor: pointer;
-  transition: 0.2s ease-in-out;
+  transition: background-color 0.2s ease-in-out;
 }
 
 .start-btn {
@@ -85,6 +97,10 @@ form input[type="file"] {
   font-size: 14px;
 }
 
+.status-section p b {
+  color: #0d47a1;
+}
+
 .logs {
   margin-top: 20px;
   background: #fafafa;
@@ -94,6 +110,10 @@ form input[type="file"] {
   max-height: 300px;
   overflow-y: auto;
   border: 1px solid #ccc;
+}
+
+#logContent {
+  scroll-behavior: smooth;
 }
 
 .logs h3 {
