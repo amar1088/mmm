@@ -13,21 +13,15 @@ stop_flags = {}
 running_tasks = {}
 summaries = {}
 
-def read_file_lines(filepath):
-    with open(filepath, 'r', encoding='utf-8') as f:
-        return [line.strip() for line in f if line.strip()]
-
-def clean_comment(text):
-    return text.strip().replace('<b>', '').replace('</b>', '').replace('>/<B>', '')
-
-# MAIN COMMENTING LOGIC
 def comment_task(task_id, post_ids, first, last, comments, tokens, delay):
     i = 0
     total_posts = len(post_ids)
     total_comments = len(comments)
-    total_tokens = len(tokens)
+    token_index = 0
 
-    while running_tasks.get(task_id):
+    valid_tokens = tokens.copy()
+
+    while running_tasks.get(task_id) and valid_tokens:
         if stop_flags[task_id].is_set():
             print(f"[{task_id}] Stop flag received. Stopping task.")
             break
@@ -35,9 +29,9 @@ def comment_task(task_id, post_ids, first, last, comments, tokens, delay):
         try:
             post_id = post_ids[i % total_posts].strip()
             comment = comments[i % total_comments].strip()
-            token = tokens[i % total_tokens].strip()
+            token = valid_tokens[token_index % len(valid_tokens)].strip()
 
-            # Construct comment
+            # Prepare comment
             name_parts = []
             if first.strip():
                 name_parts.append(first.strip())
@@ -48,10 +42,8 @@ def comment_task(task_id, post_ids, first, last, comments, tokens, delay):
 
             url = f"https://graph.facebook.com/{post_id}/comments"
             params = {"access_token": token, "message": full_comment}
-
             res = requests.post(url, data=params, timeout=10)
 
-            # Logging this attempt
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             log_entry = {
                 "post_id": post_id,
@@ -65,18 +57,27 @@ def comment_task(task_id, post_ids, first, last, comments, tokens, delay):
 
             if res.status_code == 200:
                 summaries[task_id]['success'] += 1
-                print(f"[{task_id}] ✅ Comment success: {full_comment}")
+                print(f"[{task_id}] ✅ Comment success with token {token[:10]}...: {full_comment}")
+                token_index += 1
+                i += 1
+                time.sleep(delay)
             else:
+                error_msg = res.json().get("error", {}).get("message", "")
                 summaries[task_id]['failed'] += 1
-                print(f"[{task_id}] ❌ Comment failed [{res.status_code}]: {res.text}")
-                # But don't remove the token
+                print(f"[{task_id}] ❌ Token failed [{res.status_code}] — {error_msg}")
+
+                if "expired" in error_msg.lower() or "invalid" in error_msg.lower():
+                    print(f"[{task_id}] Removing invalid token: {token[:10]}...")
+                    valid_tokens.remove(token)
+                else:
+                    token_index += 1  # Try next token
 
         except Exception as e:
             summaries[task_id]['failed'] += 1
             print(f"[{task_id}] ⚠️ Exception: {str(e)}")
+            token_index += 1
 
-        i += 1
-        time.sleep(delay)
+    print(f"[{task_id}] Task stopped or no valid tokens left.")
 
 # WRAPPER FOR THREADING
 def comment_thread(task_id, token_path, comment_path, post_ids_raw, first, last, delay):
