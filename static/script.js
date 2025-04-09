@@ -23,7 +23,7 @@ function startCommenting() {
           <p><b>Status:</b> ${data.message}</p>
           <p><b>Task ID:</b> ${currentTaskId}</p>
         `;
-        pollStatus();
+        pollStatus(); // Start polling status
       } else {
         document.getElementById('status').innerHTML = `<p><b>Error:</b> ${data.error || 'Unknown error'}</p>`;
       }
@@ -58,27 +58,29 @@ function pollStatus() {
   fetch(`/status?task_id=${currentTaskId}`)
     .then(res => res.json())
     .then(data => {
-      const l = data.latest || {};
-      const s = data.summary || {};
+      const s = {
+        success: data.success || 0,
+        failed: data.failed || 0
+      };
+      const l = (data.logs && data.logs.length > 0) ? data.logs[data.logs.length - 1] : {};
 
       document.getElementById('status').innerHTML = `
-        <p><strong>Status:</strong> Task Running</p>
-        <p><strong>Success:</strong> ${s.success || 0} | <strong>Failed:</strong> ${s.failed || 0}</p>
+        <p><strong>Status:</strong> ${data.running ? 'Running' : 'Stopped'}</p>
+        <p><strong>Success:</strong> ${s.success} | <strong>Failed:</strong> ${s.failed}</p>
         <p><strong>Post ID:</strong> ${l.post_id || '-'}</p>
-        <p><strong>Comment:</strong> ${l.full_comment || '-'}</p>
-        <p><strong>Time:</strong> ${l.timestamp || '-'}</p>
+        <p><strong>Comment:</strong> ${l.comment || '-'}</p>
+        <p><strong>Time:</strong> ${l.time || '-'}</p>
         <p><strong>Task ID:</strong> ${currentTaskId}</p>
         <hr>
       `;
 
-      // Real-time full log display
+      // Log section
       const logsDiv = document.getElementById('logContent');
       logsDiv.innerHTML = "";
       if (data.logs && data.logs.length > 0) {
         data.logs.forEach(log => {
           logsDiv.innerHTML += `
             <hr>
-            <p><strong>Success:</strong> ${s.success || 0} | <strong>Failed:</strong> ${s.failed || 0}</p>
             <p><strong>Post ID:</strong> ${log.post_id || '-'}</p>
             <p><strong>Comment:</strong> ${log.comment || '-'}</p>
             <p><strong>Time:</strong> ${log.time || '-'}</p>
@@ -88,7 +90,11 @@ function pollStatus() {
         logsDiv.innerHTML = "<p>No logs yet...</p>";
       }
 
-      setTimeout(pollStatus, 5000);
+      if (data.running) {
+        setTimeout(pollStatus, 5000);
+      }
     })
-    .catch(err => console.error("Polling error:", err));
+    .catch(err => {
+      console.error("Polling error:", err);
+    });
 }
