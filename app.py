@@ -1,30 +1,27 @@
-from flask import Flask, request, jsonify, render_template
-import os, threading, time, requests, uuid
-from datetime import datetime
-from apscheduler.schedulers.background import BackgroundScheduler
+from flask import Flask, request, jsonify
+import threading
+import uuid
+import time
+import requests
+import random
 
 app = Flask(__name__)
-UPLOAD_FOLDER = 'uploads'
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-status_data = {}
-task_threads = {}
-stop_flags = {}
-summaries = {}
 running_tasks = {}
-
-def read_file_lines(filepath):
-    with open(filepath, 'r', encoding='utf-8') as f:
-        return [line.strip() for line in f if line.strip()]
+summaries = {}
+logs = {}
 
 def clean_comment(text):
     return text.strip().replace('<b>', '').replace('</b>', '').replace('>/<B>', '')
 
 def comment_task(task_id, post_ids, first, last, comments, tokens, delay):
     summaries[task_id] = {'success': 0, 'failed': 0}
-    running_tasks[task_id] = True
+    logs[task_id] = []
+    
+    random.shuffle(tokens)  # Randomize token order once
     i = 0
-    while running_tasks.get(task_id):
+
+    while running_tasks.get(task_id) and tokens:
         try:
             comment = comments[i % len(comments)].strip()
             token = tokens[i % len(tokens)].strip()
@@ -38,98 +35,77 @@ def comment_task(task_id, post_ids, first, last, comments, tokens, delay):
                 name_parts.append(last.strip())
 
             full_comment = clean_comment(" ".join(name_parts))
-
             url = f"https://graph.facebook.com/{post_id}/comments"
             params = {"access_token": token, "message": full_comment}
 
             res = requests.post(url, data=params, timeout=10)
+            timestamp = time.strftime('%Y-%m-%d %H:%M:%S')
+
             if res.status_code == 200:
                 summaries[task_id]['success'] += 1
+                logs[task_id].append(f"[{timestamp}] ✅ Commented on {post_id}")
+                i += 1
             else:
+                error_msg = res.text
+                logs[task_id].append(f"[{timestamp}] ❌ Failed on {post_id}: {error_msg}")
                 summaries[task_id]['failed'] += 1
-        except:
+
+                # If token is invalid, remove it from list
+                if "OAuthException" in error_msg or "Error validating access token" in error_msg:
+                    logs[task_id].append(f"[{timestamp}] ⛔ Removing invalid token.")
+                    tokens.pop(i % len(tokens))  # Remove invalid token
+                else:
+                    i += 1  # Move forward if error not token-related
+
+        except Exception as e:
             summaries[task_id]['failed'] += 1
+            logs[task_id].append(f"[ERROR] {str(e)}")
+            i += 1
 
-        i += 1
-        for _ in range(delay):
-            if not running_tasks.get(task_id):
-                break
-            time.sleep(1)
+        time.sleep(delay)
 
-@app.route("/", methods=["GET"])
-def index():
-    return render_template("index.html")
+    logs[task_id].append("== Task stopped or no valid tokens left ==")
 
-@app.route("/", methods=["POST"])
-def start_commenting():
-    token_file = request.files.get('token_file')
-    comment_file = request.files.get('comment_file')
-    post_ids = request.form.get('post_ids')
-    first_name = request.form.get('first_name', '')
-    last_name = request.form.get('last_name', '')
-    delay = max(60, int(request.form.get('delay', 60)))
-
-    if not token_file or not comment_file or not post_ids:
-        return jsonify({"error": "Missing required fields."}), 400
-
-    task_id = str(uuid.uuid4())
-    token_path = os.path.join(UPLOAD_FOLDER, f'{task_id}_tokens.txt')
-    comment_path = os.path.join(UPLOAD_FOLDER, f'{task_id}_comments.txt')
-    token_file.save(token_path)
-    comment_file.save(comment_path)
-
-    post_id_list = [p.strip() for p in post_ids.split(',') if p.strip()]
-    comments = read_file_lines(comment_path)
-    tokens = read_file_lines(token_path)
-
-    thread = threading.Thread(
-        target=comment_task,
-        args=(task_id, post_id_list, first_name, last_name, comments, tokens, delay),
-        daemon=True
-    )
-    thread.start()
-    task_threads[task_id] = thread
-
-    return jsonify({"message": "Commenting started", "task_id": task_id})
+@app.route('/start', methods=['POST'])
+def start():
+    try:
+        post_ids = request.files['posts'].read().decode().splitlines()
+        comments = request.files['comments'].read().decode().splitlines()
+        tokens = request.files['tokens'].read().decode().splitlines()
+        first = request.form.get('first', '')
+        last = request.form.get('last', '')
+        delay = int(request.form.get('delay', '5'))
+        task_id = str(uuid.uuid4())
+        running_tasks[task_id] = True
+        thread = threading.Thread(target=comment_task, args=(task_id, post_ids, first, last, comments, tokens, delay))
+        thread.start()
+        return jsonify({'task_id': task_id})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/stop', methods=['POST'])
 def stop():
-    data = request.get_json()
-    task_id = data.get("task_id")
-    if not task_id:
-        return jsonify({"error": "Task ID is required"}), 400
-
+    task_id = request.form.get('task_id')
     if task_id in running_tasks:
         running_tasks[task_id] = False
-        return jsonify({"message": f"Stopped task {task_id}"})
-    return jsonify({"error": "Invalid task ID"}), 400
+        return 'Task stopped successfully.'
+    return 'Invalid Task ID.'
 
-@app.route('/status')
-def status():
-    task_id = request.args.get("task_id")
-    if not task_id:
-        return jsonify({"error": "Task ID is required"}), 400
+@app.route('/status/<task_id>')
+def status(task_id):
+    if task_id not in summaries:
+        return jsonify({'status': 'Not Found'})
+    summary = summaries[task_id]
+    is_running = running_tasks.get(task_id, False)
     return jsonify({
-        "summary": summaries.get(task_id, {"success": 0, "failed": 0}),
+        'status': 'Task Running' if is_running else 'Stopped',
+        'success': summary['success'],
+        'failed': summary['failed'],
+        'log': logs.get(task_id, [])[-10:],
+        'task_id': task_id
     })
 
-@app.route('/ping')
-def ping():
-    return "pong"
-
-def keep_alive():
-    try:
-        url = os.environ.get("RENDER_EXTERNAL_URL")
-        if url:
-            requests.get(url + "/ping", timeout=10)
-    except:
-        pass
-
-# Self ping every 10 minutes
-scheduler = BackgroundScheduler()
-scheduler.add_job(keep_alive, "interval", minutes=10)
-scheduler.start()
-
 if __name__ == '__main__':
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
+    import os
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host='0.0.0.0', port=port)
