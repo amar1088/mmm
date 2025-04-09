@@ -1,5 +1,3 @@
-// Updated script.js matching the backend expectations
-
 let currentTaskId = null;
 
 function startCommenting() {
@@ -56,20 +54,41 @@ function stopCommenting() {
 
 function pollStatus() {
   if (!currentTaskId) return;
+
   fetch(`/status?task_id=${currentTaskId}`)
     .then(res => res.json())
     .then(data => {
       const l = data.latest || {};
       const s = data.summary || {};
-      document.getElementById('status').innerHTML += `
+
+      document.getElementById('status').innerHTML = `
+        <p><strong>Status:</strong> Task Running</p>
         <p><strong>Success:</strong> ${s.success || 0} | <strong>Failed:</strong> ${s.failed || 0}</p>
         <p><strong>Post ID:</strong> ${l.post_id || '-'}</p>
         <p><strong>Comment:</strong> ${l.full_comment || '-'}</p>
         <p><strong>Time:</strong> ${l.timestamp || '-'}</p>
+        <p><strong>Task ID:</strong> ${currentTaskId}</p>
         <hr>
       `;
+
+      // Real-time full log display
+      const logsDiv = document.getElementById('logContent');
+      logsDiv.innerHTML = "";
+      if (data.logs && data.logs.length > 0) {
+        data.logs.forEach(log => {
+          logsDiv.innerHTML += `
+            <hr>
+            <p><strong>Success:</strong> ${s.success || 0} | <strong>Failed:</strong> ${s.failed || 0}</p>
+            <p><strong>Post ID:</strong> ${log.post_id || '-'}</p>
+            <p><strong>Comment:</strong> ${log.comment || '-'}</p>
+            <p><strong>Time:</strong> ${log.time || '-'}</p>
+          `;
+        });
+      } else {
+        logsDiv.innerHTML = "<p>No logs yet...</p>";
+      }
+
       setTimeout(pollStatus, 5000);
     })
     .catch(err => console.error("Polling error:", err));
 }
-
