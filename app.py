@@ -121,11 +121,16 @@ def stop():
 def status():
     task_id = request.args.get("task_id")
     if not task_id:
-        return jsonify({"error": "Task ID is required"}), 400
-    return jsonify({
-        "running": running_tasks.get(task_id, False),
-        "summary": summaries.get(task_id, {"success": 0, "failed": 0})
-    })
+        return "invalid"
+
+    summary = summaries.get(task_id, {"success": 0, "failed": 0})
+
+    if summary['success'] > 0:
+        return "success"
+    elif summary['failed'] > 0:
+        return "fail"
+    else:
+        return "pending"
 
 @app.route('/ping')
 def ping():
