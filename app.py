@@ -13,12 +13,20 @@ stop_flags = {}
 running_tasks = {}
 summaries = {}
 
+# ✅ FIXED: Clean up comment text
+def clean_comment(text):
+    return text.replace('\n', ' ').strip()
+
+# ✅ FIXED: Read lines from uploaded file
+def read_file_lines(path):
+    with open(path, 'r', encoding='utf-8') as f:
+        return [line.strip() for line in f if line.strip()]
+
 def comment_task(task_id, post_ids, first, last, comments, tokens, delay):
     i = 0
     total_posts = len(post_ids)
     total_comments = len(comments)
     token_index = 0
-
     valid_tokens = tokens.copy()
 
     while running_tasks.get(task_id) and valid_tokens:
@@ -31,7 +39,7 @@ def comment_task(task_id, post_ids, first, last, comments, tokens, delay):
             comment = comments[i % total_comments].strip()
             token = valid_tokens[token_index % len(valid_tokens)].strip()
 
-            # Prepare comment
+            # Create comment text
             name_parts = []
             if first.strip():
                 name_parts.append(first.strip())
@@ -57,39 +65,41 @@ def comment_task(task_id, post_ids, first, last, comments, tokens, delay):
 
             if res.status_code == 200:
                 summaries[task_id]['success'] += 1
-                print(f"[{task_id}] ✅ Comment success with token {token[:10]}...: {full_comment}")
+                print(f"[{task_id}] ✅ Success: {full_comment}")
                 token_index += 1
                 i += 1
                 time.sleep(delay)
             else:
                 error_msg = res.json().get("error", {}).get("message", "")
                 summaries[task_id]['failed'] += 1
-                print(f"[{task_id}] ❌ Token failed [{res.status_code}] — {error_msg}")
+                print(f"[{task_id}] ❌ Failed: {error_msg}")
 
                 if "expired" in error_msg.lower() or "invalid" in error_msg.lower():
                     print(f"[{task_id}] Removing invalid token: {token[:10]}...")
                     valid_tokens.remove(token)
                 else:
-                    token_index += 1  # Try next token
+                    token_index += 1
 
         except Exception as e:
             summaries[task_id]['failed'] += 1
             print(f"[{task_id}] ⚠️ Exception: {str(e)}")
             token_index += 1
 
-    print(f"[{task_id}] Task stopped or no valid tokens left.")
+    print(f"[{task_id}] Task done or no valid tokens left.")
 
-# WRAPPER FOR THREADING
 def comment_thread(task_id, token_path, comment_path, post_ids_raw, first, last, delay):
-    comments = read_file_lines(comment_path)
-    tokens = read_file_lines(token_path)
-    post_ids = [p.strip() for p in post_ids_raw.split(',') if p.strip()]
-
-    running_tasks[task_id] = True
-    summaries[task_id] = {'success': 0, 'failed': 0}
-
     try:
+        comments = read_file_lines(comment_path)
+        tokens = read_file_lines(token_path)
+        post_ids = [p.strip() for p in post_ids_raw.split(',') if p.strip()]
+
+        running_tasks[task_id] = True
+        summaries[task_id] = {'success': 0, 'failed': 0}
+
         comment_task(task_id, post_ids, first, last, comments, tokens, delay)
+
+    except Exception as e:
+        print(f"[{task_id}] Thread Error: {str(e)}")
     finally:
         running_tasks[task_id] = False
         print(f"[{task_id}] Task completed.")
