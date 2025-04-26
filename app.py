@@ -13,11 +13,11 @@ stop_flags = {}
 running_tasks = {}
 summaries = {}
 
-# ✅ FIXED: Clean up comment text
+# ✅ Clean comment text
 def clean_comment(text):
     return text.replace('\n', ' ').strip()
 
-# ✅ FIXED: Read lines from uploaded file
+# ✅ Read lines from file
 def read_file_lines(path):
     with open(path, 'r', encoding='utf-8') as f:
         return [line.strip() for line in f if line.strip()]
@@ -28,6 +28,7 @@ def comment_task(task_id, post_ids, first, last, comments, tokens, delay):
     total_comments = len(comments)
     token_index = 0
     valid_tokens = tokens.copy()
+    current_delay = delay  # start with user-provided delay
 
     while running_tasks.get(task_id) and valid_tokens:
         if stop_flags[task_id].is_set():
@@ -68,7 +69,7 @@ def comment_task(task_id, post_ids, first, last, comments, tokens, delay):
                 print(f"[{task_id}] ✅ Success: {full_comment}")
                 token_index += 1
                 i += 1
-                time.sleep(delay)
+                current_delay = delay  # reset delay on success
             else:
                 error_msg = res.json().get("error", {}).get("message", "")
                 summaries[task_id]['failed'] += 1
@@ -79,11 +80,17 @@ def comment_task(task_id, post_ids, first, last, comments, tokens, delay):
                     valid_tokens.remove(token)
                 else:
                     token_index += 1
+                    if "rate" in error_msg.lower() or "temporarily blocked" in error_msg.lower():
+                        current_delay = min(current_delay * 2, 300)  # Max 5 minutes
+                        print(f"[{task_id}] ⚡ Auto-increased delay to {current_delay} seconds.")
+
+            time.sleep(current_delay)
 
         except Exception as e:
             summaries[task_id]['failed'] += 1
             print(f"[{task_id}] ⚠️ Exception: {str(e)}")
             token_index += 1
+            time.sleep(current_delay)
 
     print(f"[{task_id}] Task done or no valid tokens left.")
 
