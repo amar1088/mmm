@@ -13,11 +13,11 @@ stop_flags = {}
 running_tasks = {}
 summaries = {}
 
-# ✅ Clean comment text
+# Clean comment text
 def clean_comment(text):
     return text.replace('\n', ' ').strip()
 
-# ✅ Read lines from file
+# Read lines from file
 def read_file_lines(path):
     with open(path, 'r', encoding='utf-8') as f:
         return [line.strip() for line in f if line.strip()]
@@ -28,7 +28,6 @@ def comment_task(task_id, post_ids, first, last, comments, tokens, delay):
     total_comments = len(comments)
     token_index = 0
     valid_tokens = tokens.copy()
-    current_delay = delay  # start with user-provided delay
 
     while running_tasks.get(task_id) and valid_tokens:
         if stop_flags[task_id].is_set():
@@ -40,7 +39,7 @@ def comment_task(task_id, post_ids, first, last, comments, tokens, delay):
             comment = comments[i % total_comments].strip()
             token = valid_tokens[token_index % len(valid_tokens)].strip()
 
-            # Create comment text
+            # Construct comment
             name_parts = []
             if first.strip():
                 name_parts.append(first.strip())
@@ -69,7 +68,7 @@ def comment_task(task_id, post_ids, first, last, comments, tokens, delay):
                 print(f"[{task_id}] ✅ Success: {full_comment}")
                 token_index += 1
                 i += 1
-                current_delay = delay  # reset delay on success
+                time.sleep(delay)  # Apply user delay only after success
             else:
                 error_msg = res.json().get("error", {}).get("message", "")
                 summaries[task_id]['failed'] += 1
@@ -77,19 +76,17 @@ def comment_task(task_id, post_ids, first, last, comments, tokens, delay):
 
                 if "expired" in error_msg.lower() or "invalid" in error_msg.lower():
                     print(f"[{task_id}] Skipping invalid token: {token[:10]}...")
-                    token_index += 1  # Skip the invalid token, move to the next one
+                    token_index += 1
+                    continue  # Skip delay for invalid tokens
                 else:
                     token_index += 1
-                    if "rate" in error_msg.lower() or "temporarily blocked" in error_msg.lower():
-                        print(f"[{task_id}] ⚡ Delay remains fixed at {current_delay} seconds.")
-
-            time.sleep(current_delay)
+                    time.sleep(delay)  # Apply user delay for other failures
 
         except Exception as e:
             summaries[task_id]['failed'] += 1
             print(f"[{task_id}] ⚠️ Exception: {str(e)}")
             token_index += 1
-            time.sleep(current_delay)
+            continue  # Fast skip on error
 
     print(f"[{task_id}] Task done or no valid tokens left.")
 
@@ -120,7 +117,7 @@ def index():
         last_name = request.form.get('last_name', '')
 
         try:
-            delay = max(10, int(request.form.get('delay', 60)))
+            delay = max(1, int(request.form.get('delay', 60)))
         except:
             delay = 60
 
