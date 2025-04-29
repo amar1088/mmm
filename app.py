@@ -39,7 +39,7 @@ def comment_task(task_id, post_ids, first, last, comments, tokens, delay):
             comment = comments[i % total_comments].strip()
             token = valid_tokens[token_index % len(valid_tokens)].strip()
 
-            # Construct comment
+            # Build comment text
             name_parts = []
             if first.strip():
                 name_parts.append(first.strip())
@@ -58,6 +58,7 @@ def comment_task(task_id, post_ids, first, last, comments, tokens, delay):
                 "comment": full_comment,
                 "time": timestamp
             }
+
             status_data.setdefault(task_id, {"logs": []})["logs"].append(log_entry)
             status_data[task_id]["full_comment"] = full_comment
             status_data[task_id]["post_id"] = post_id
@@ -68,27 +69,28 @@ def comment_task(task_id, post_ids, first, last, comments, tokens, delay):
                 print(f"[{task_id}] ✅ Success: {full_comment}")
                 token_index += 1
                 i += 1
-                time.sleep(delay)  # Apply user delay only after success
+                time.sleep(delay)  # Only delay after success
             else:
                 error_msg = res.json().get("error", {}).get("message", "")
                 summaries[task_id]['failed'] += 1
                 print(f"[{task_id}] ❌ Failed: {error_msg}")
 
                 if "expired" in error_msg.lower() or "invalid" in error_msg.lower():
-                    print(f"[{task_id}] Skipping invalid token: {token[:10]}...")
-                    token_index += 1
-                    continue  # Skip delay for invalid tokens
-                else:
-                    token_index += 1
-                    time.sleep(delay)  # Apply user delay for other failures
+                    print(f"[{task_id}] Removing invalid token: {token[:10]}...")
+                    valid_tokens.remove(token)
+                    if not valid_tokens:
+                        print(f"[{task_id}] No valid tokens remaining. Exiting.")
+                        break
+                    continue  # Skip to next loop
+
+                token_index += 1  # Move to next token
 
         except Exception as e:
             summaries[task_id]['failed'] += 1
             print(f"[{task_id}] ⚠️ Exception: {str(e)}")
             token_index += 1
-            continue  # Fast skip on error
 
-    print(f"[{task_id}] Task done or no valid tokens left.")
+    print(f"[{task_id}] Task finished or no valid tokens left.")
 
 def comment_thread(task_id, token_path, comment_path, post_ids_raw, first, last, delay):
     try:
