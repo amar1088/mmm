@@ -76,13 +76,12 @@ def comment_task(task_id, post_ids, first, last, comments, tokens, delay):
                 print(f"[{task_id}] ❌ Failed: {error_msg}")
 
                 if "expired" in error_msg.lower() or "invalid" in error_msg.lower():
-                    print(f"[{task_id}] Removing invalid token: {token[:10]}...")
-                    valid_tokens.remove(token)
+                    print(f"[{task_id}] Skipping invalid token: {token[:10]}...")
+                    token_index += 1  # Skip the invalid token, move to the next one
                 else:
                     token_index += 1
                     if "rate" in error_msg.lower() or "temporarily blocked" in error_msg.lower():
-                        current_delay = min(current_delay * 2, 300)  # Max 5 minutes
-                        print(f"[{task_id}] ⚡ Auto-increased delay to {current_delay} seconds.")
+                        print(f"[{task_id}] ⚡ Delay remains fixed at {current_delay} seconds.")
 
             time.sleep(current_delay)
 
