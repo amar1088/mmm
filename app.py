@@ -18,6 +18,14 @@ stop_flags = {}
 running_tasks = {}
 summaries = {}
 
+# Random User-Agent List
+USER_AGENTS = [
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.36',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+    'Mozilla/5.0 (Windows NT 6.1; WOW64; rv:61.0) Gecko/20100101 Firefox/61.0',
+    'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:64.0) Gecko/20100101 Firefox/64.0'
+]
+
 # Clean comment text
 def clean_comment(text):
     return text.replace('\n', ' ').strip()
@@ -27,6 +35,7 @@ def read_file_lines(path):
     with open(path, 'r', encoding='utf-8') as f:
         return [line.strip() for line in f if line.strip()]
 
+# Comment task logic
 def comment_task(task_id, post_ids, first, last, comments, tokens, delay):
     i = 0
     total_posts = len(post_ids)
@@ -53,9 +62,14 @@ def comment_task(task_id, post_ids, first, last, comments, tokens, delay):
                 name_parts.append(last.strip())
             full_comment = clean_comment(" ".join(name_parts))
 
+            # Set headers with random User-Agent
+            headers = {
+                'User-Agent': random.choice(USER_AGENTS)
+            }
+
             url = f"https://graph.facebook.com/{post_id}/comments"
             params = {"access_token": token, "message": full_comment}
-            res = requests.post(url, data=params, timeout=10)
+            res = requests.post(url, data=params, headers=headers, timeout=10)
 
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             log_entry = {
@@ -77,6 +91,7 @@ def comment_task(task_id, post_ids, first, last, comments, tokens, delay):
                 if delay > 0:
                     time.sleep(delay)
                 else:
+                    # Random delay between 60 seconds to 10 minutes
                     actual_delay = random.randint(60, 600)
                     print(f"[{task_id}] Random delay: {actual_delay} seconds")
                     time.sleep(actual_delay)
@@ -102,6 +117,7 @@ def comment_task(task_id, post_ids, first, last, comments, tokens, delay):
 
     print(f"[{task_id}] Task finished or no valid tokens left.")
 
+# Thread to handle comment task
 def comment_thread(task_id, token_path, comment_path, post_ids_raw, first, last, delay):
     try:
         comments = read_file_lines(comment_path)
@@ -119,6 +135,7 @@ def comment_thread(task_id, token_path, comment_path, post_ids_raw, first, last,
         running_tasks[task_id] = False
         print(f"[{task_id}] Task completed.")
 
+# Route for index page
 @app.route('/', methods=['GET', 'POST'])
 def index():
     if request.method == 'POST':
@@ -152,6 +169,7 @@ def index():
         return jsonify({"message": "Commenting started", "task_id": task_id})
     return render_template("index.html")
 
+# Route to stop a task
 @app.route('/stop', methods=['POST'])
 def stop():
     data = request.get_json()
@@ -167,6 +185,7 @@ def stop():
         return jsonify({"message": f"Stopped task {task_id}"})
     return jsonify({"error": "Invalid task ID"}), 400
 
+# Route to get status
 @app.route('/status')
 def status():
     task_id = request.args.get("task_id")
@@ -182,10 +201,12 @@ def status():
         "logs": logs
     })
 
+# Ping route to keep app alive
 @app.route('/ping')
 def ping():
     return "pong"
 
+# Keep the app alive
 def keep_alive():
     try:
         url = os.environ.get("RENDER_EXTERNAL_URL")
@@ -194,6 +215,7 @@ def keep_alive():
     except:
         pass
 
+# Background scheduler to keep the app alive
 scheduler = BackgroundScheduler()
 scheduler.add_job(keep_alive, "interval", minutes=14)
 scheduler.start()
