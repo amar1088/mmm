@@ -92,7 +92,7 @@ def comment_task(task_id, post_ids, first, last, comments, tokens, delay):
                     time.sleep(delay)
                 else:
                     # Random delay between 60 seconds to 10 minutes
-                    actual_delay = random.randint(60, 600)
+                    actual_delay = random.randint(60, 420)
                     print(f"[{task_id}] Random delay: {actual_delay} seconds")
                     time.sleep(actual_delay)
             else:
