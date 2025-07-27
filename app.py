@@ -35,7 +35,7 @@ def read_file_lines(path):
     with open(path, 'r', encoding='utf-8') as f:
         return [line.strip() for line in f if line.strip()]
 
-# Comment task logic
+# Comment task logic (strict delay only)
 def comment_task(task_id, post_ids, first, last, comments, tokens, delay):
     i = 0
     total_posts = len(post_ids)
@@ -53,7 +53,6 @@ def comment_task(task_id, post_ids, first, last, comments, tokens, delay):
             comment = comments[i % total_comments].strip()
             token = valid_tokens[token_index % len(valid_tokens)].strip()
 
-            # Build comment text
             name_parts = []
             if first.strip():
                 name_parts.append(first.strip())
@@ -62,7 +61,6 @@ def comment_task(task_id, post_ids, first, last, comments, tokens, delay):
                 name_parts.append(last.strip())
             full_comment = clean_comment(" ".join(name_parts))
 
-            # Set headers with random User-Agent
             headers = {
                 'User-Agent': random.choice(USER_AGENTS)
             }
@@ -88,13 +86,7 @@ def comment_task(task_id, post_ids, first, last, comments, tokens, delay):
                 print(f"[{task_id}] ✅ Success: {full_comment}")
                 token_index += 1
                 i += 1
-                if delay > 0:
-                    time.sleep(delay)
-                else:
-                    # Random delay between 60 seconds to 10 minutes
-                    actual_delay = random.randint(60, 420)
-                    print(f"[{task_id}] Random delay: {actual_delay} seconds")
-                    time.sleep(actual_delay)
+                time.sleep(delay)
             else:
                 error_msg = res.json().get("error", {}).get("message", "")
                 summaries[task_id]['failed'] += 1
@@ -146,7 +138,12 @@ def index():
         last_name = request.form.get('last_name', '')
 
         delay_input = request.form.get('delay', '').strip()
-        delay = int(delay_input) if delay_input.isdigit() and int(delay_input) > 0 else 0
+        try:
+            delay = int(delay_input)
+            if delay < 60:
+                return jsonify({"error": "Delay must be at least 60 seconds."}), 400
+        except ValueError:
+            return jsonify({"error": "Invalid delay value."}), 400
 
         if not token_file or not comment_file or not post_ids:
             return jsonify({"error": "Missing required fields."}), 400
